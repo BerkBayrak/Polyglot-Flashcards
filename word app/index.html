@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polyglot Flashcards</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root { --card-height: 240px; }
+        body { transition: background-color 0.3s ease; min-height: 100vh; padding-bottom: 80px; }
+
+        /* --- Dynamic Borders --- */
+        [data-bs-theme="light"] .word-card { border: 2px solid #6c757d; /* Darker Grey */ }
+        [data-bs-theme="dark"] .word-card { border: 2px solid #ffffff; /* White */ }
+
+        /* Card Styles */
+        .word-card { width: 300px; height: var(--card-height); perspective: 1000px; cursor: pointer; margin: 15px; position: relative; border-radius: 20px; }
+        .card-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); transform-style: preserve-3d; }
+        .word-card.flipped .card-inner { transform: rotateY(180deg); }
+        .card-front, .card-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 18px; padding: 20px; }
+        
+        .card-front { background: var(--bs-body-bg); color: var(--bs-body-color); }
+        .card-back { background: #0d6efd; color: white; transform: rotateY(180deg); }
+        
+        .badge-tag { position: absolute; bottom: 15px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; }
+
+        /* Controls & Buttons */
+        .action-btn { width: 32px; height: 32px; border-radius: 8px; border: none; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; transition: 0.2s; }
+        .card-actions { position: absolute; top: 10px; right: 10px; z-index: 100; display: none; gap: 5px; }
+        .word-card:hover .card-actions { display: flex; }
+
+        .add-card-btn { border: 3px dashed #0d6efd !important; color: #0d6efd; background: transparent !important; font-size: 4rem !important; display: flex; justify-content: center; align-items: center; height: 100%; width: 100%; border-radius: 18px; }
+        
+        .sticky-controls { background: var(--bs-body-bg); border-bottom: 1px solid rgba(0,0,0,0.1); z-index: 1000; padding: 15px 0; }
+    </style>
+</head>
+<body>
+
+<div class="sticky-top sticky-controls shadow-sm">
+    <div class="container">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
+            
+            <div class="d-flex align-items-center gap-3">
+                <h3 class="fw-bold m-0"><i class="bi bi-card-checklist text-primary"></i> Flashcards</h3>
+                <div class="input-group w-auto">
+                    <span class="input-group-text"><i class="bi bi-translate"></i></span>
+                    <select id="languageSelect" class="form-select fw-bold" style="min-width: 120px;"></select>
+                    <button class="btn btn-outline-primary" onclick="addLanguage()">+</button>
+                </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 justify-content-center">
+                <select id="timeFilter" class="form-select w-auto">
+                    <option value="all">All Time</option>
+                    <option value="today">Today</option>
+                    <option value="week">This Week</option>
+                </select>
+                
+                <div class="input-group w-auto">
+                    <select id="categoryFilter" class="form-select" style="max-width: 150px;"></select>
+                    <button class="btn btn-outline-secondary" onclick="openCategoryManager()" title="Manage Categories">
+                        <i class="bi bi-gear"></i>
+                    </button>
+                </div>
+
+                <div class="vr mx-2"></div>
+                
+                <div class="btn-group">
+                    <button class="btn btn-outline-success" onclick="exportData()" title="Export Current Language"><i class="bi bi-download"></i></button>
+                    <button class="btn btn-outline-warning" onclick="$('#importFile').click()" title="Import to Current Language"><i class="bi bi-upload"></i></button>
+                </div>
+                <input type="file" id="importFile" hidden accept=".json" onchange="importData(event)">
+                
+                <button class="btn btn-dark" id="themeToggle"><i class="bi bi-moon-stars"></i></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container mt-4">
+    <div id="cardContainer" class="d-flex flex-wrap justify-content-center"></div>
+</div>
+
+<div class="modal fade" id="cardModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="modalTitle">Card Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editCardId">
+                <div class="mb-3">
+                    <label class="form-label">Front Side</label>
+                    <input type="text" id="frontInput" class="form-control" placeholder="Word...">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Back Side</label>
+                    <textarea id="backInput" class="form-control" rows="3" placeholder="Definition..."></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Category</label>
+                    <select id="cardCategorySelect" class="form-select"></select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="saveCardBtn" class="btn btn-primary w-100">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="categoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Manage Categories</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group mb-3">
+                    <input type="text" id="newCatInput" class="form-control" placeholder="New Category Name">
+                    <button class="btn btn-success" onclick="addCategory()">Add</button>
+                </div>
+                <ul id="categoryList" class="list-group">
+                    </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+$(document).ready(function() {
+    // --- State Management ---
+    let appState = {
+        languages: JSON.parse(localStorage.getItem('fc_languages')) || ['English'],
+        currentLang: localStorage.getItem('fc_current_lang') || 'English',
+        categories: [], // Loaded dynamically
+        cards: []       // Loaded dynamically
+    };
+
+    // --- Initialization ---
+    function init() {
+        loadTheme();
+        renderLanguageSelect();
+        loadLanguageData(appState.currentLang);
+    }
+
+    function loadTheme() {
+        const theme = localStorage.getItem('fc_theme') || 'light';
+        $('html').attr('data-bs-theme', theme);
+        $('#themeToggle').html(theme === 'light' ? '<i class="bi bi-moon-stars"></i>' : '<i class="bi bi-sun"></i>');
+    }
+
+    function loadLanguageData(lang) {
+        appState.currentLang = lang;
+        localStorage.setItem('fc_current_lang', lang);
+        
+        // Load Cards
+        const savedCards = localStorage.getItem(`fc_data_${lang}`);
+        appState.cards = savedCards ? JSON.parse(savedCards) : [];
+
+        // Load Categories (Default if empty)
+        const savedCats = localStorage.getItem(`fc_cats_${lang}`);
+        appState.categories = savedCats ? JSON.parse(savedCats) : ['General', 'Verbs', 'Nouns'];
+
+        updateCategoryDropdowns();
+        renderCards();
+    }
+
+    // --- Rendering ---
+    function renderLanguageSelect() {
+        const select = $('#languageSelect');
+        select.empty();
+        appState.languages.forEach(lang => {
+            select.append(`<option value="${lang}" ${lang === appState.currentLang ? 'selected' : ''}>${lang}</option>`);
+        });
+    }
+
+    function updateCategoryDropdowns() {
+        // Filter Dropdown
+        const filterSelect = $('#categoryFilter');
+        filterSelect.html('<option value="all">All Categories</option>');
+        appState.categories.forEach(c => filterSelect.append(`<option value="${c}">${c}</option>`));
+
+        // Modal Dropdown
+        const modalSelect = $('#cardCategorySelect');
+        modalSelect.empty();
+        appState.categories.forEach(c => modalSelect.append(`<option value="${c}">${c}</option>`));
+    }
+
+    function renderCards() {
+        const container = $('#cardContainer').empty();
+        const timeF = $('#timeFilter').val();
+        const catF = $('#categoryFilter').val();
+
+        // Add Button Card
+        container.append(`
+            <div class="word-card" onclick="openCardModal()">
+                <div class="card-front"><div class="add-card-btn">+</div></div>
+            </div>
+        `);
+
+        // Filter Logic
+        const now = new Date();
+        const filtered = appState.cards.filter(card => {
+            const date = new Date(card.createdAt);
+            const diff = (now - date) / (1000 * 60 * 60 * 24);
+            
+            const timeMatch = (timeF === 'all') || 
+                              (timeF === 'today' && diff < 1) || 
+                              (timeF === 'week' && diff <= 7);
+            const catMatch = (catF === 'all') || (card.category === catF);
+            
+            return timeMatch && catMatch;
+        });
+
+        filtered.forEach(card => {
+            container.append(`
+                <div class="word-card" data-id="${card.id}">
+                    <div class="card-actions">
+                        <button class="action-btn btn-warning" onclick="openCardModal(${card.id})"><i class="bi bi-pencil-fill"></i></button>
+                        <button class="action-btn btn-danger" onclick="deleteCard(${card.id})"><i class="bi bi-trash-fill"></i></button>
+                    </div>
+                    <div class="card-inner">
+                        <div class="card-front">
+                            <h4 class="fw-bold">${card.front}</h4>
+                            <span class="badge bg-secondary badge-tag">${card.category}</span>
+                        </div>
+                        <div class="card-back">
+                            <p class="fs-5">${card.back}</p>
+                        </div>
+                    </div>
+                </div>
+            `);
+        });
+    }
+
+    // --- Core Operations (CRUD) ---
+    window.openCardModal = function(id = null) {
+        if (id) {
+            const card = appState.cards.find(c => c.id === id);
+            $('#modalTitle').text('Edit Card');
+            $('#editCardId').val(id);
+            $('#frontInput').val(card.front);
+            $('#backInput').val(card.back);
+            $('#cardCategorySelect').val(card.category);
+        } else {
+            $('#modalTitle').text('New Card');
+            $('#editCardId').val('');
+            $('#frontInput').val(''); $('#backInput').val('');
+        }
+        $('#cardModal').modal('show');
+    };
+
+    $('#saveCardBtn').click(function() {
+        const id = $('#editCardId').val();
+        const cardObj = {
+            id: id ? parseInt(id) : Date.now(),
+            front: $('#frontInput').val(),
+            back: $('#backInput').val(),
+            category: $('#cardCategorySelect').val(),
+            createdAt: id ? appState.cards.find(c => c.id == id).createdAt : new Date().toISOString()
+        };
+
+        if(id) {
+            const idx = appState.cards.findIndex(c => c.id == id);
+            appState.cards[idx] = cardObj;
+        } else {
+            appState.cards.unshift(cardObj);
+        }
+
+        saveData();
+        renderCards();
+        $('#cardModal').modal('hide');
+    });
+
+    window.deleteCard = function(id) {
+        if(confirm('Delete this card?')) {
+            appState.cards = appState.cards.filter(c => c.id !== id);
+            saveData();
+            renderCards();
+        }
+    };
+
+    // --- Language Operations ---
+    window.addLanguage = function() {
+        const newLang = prompt("Enter new language name (e.g., Spanish):");
+        if (newLang && !appState.languages.includes(newLang)) {
+            appState.languages.push(newLang);
+            localStorage.setItem('fc_languages', JSON.stringify(appState.languages));
+            renderLanguageSelect();
+            $('#languageSelect').val(newLang).trigger('change');
+        }
+    };
+
+    $('#languageSelect').change(function() {
+        loadLanguageData($(this).val());
+    });
+
+    // --- Category Management ---
+    window.openCategoryManager = function() {
+        renderCategoryList();
+        $('#categoryModal').modal('show');
+    };
+
+    function renderCategoryList() {
+        const list = $('#categoryList').empty();
+        appState.categories.forEach(cat => {
+            list.append(`
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    ${cat}
+                    <button class="btn btn-sm btn-outline-danger" onclick="removeCategory('${cat}')">✕</button>
+                </li>
+            `);
+        });
+    }
+
+    window.addCategory = function() {
+        const val = $('#newCatInput').val().trim();
+        if(val && !appState.categories.includes(val)) {
+            appState.categories.push(val);
+            saveCats();
+            renderCategoryList();
+            updateCategoryDropdowns();
+            $('#newCatInput').val('');
+        }
+    };
+
+    window.removeCategory = function(cat) {
+        if(confirm(`Delete category "${cat}"?`)) {
+            appState.categories = appState.categories.filter(c => c !== cat);
+            saveCats();
+            renderCategoryList();
+            updateCategoryDropdowns();
+        }
+    };
+
+    // --- Export / Import (Scoped to Language) ---
+    window.exportData = function() {
+        const exportObj = {
+            language: appState.currentLang,
+            categories: appState.categories,
+            cards: appState.cards,
+            date: new Date().toISOString()
+        };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportObj, null, 2));
+        const dlAnchor = document.createElement('a');
+        dlAnchor.setAttribute("href", dataStr);
+        dlAnchor.setAttribute("download", `flashcards_${appState.currentLang}.json`);
+        document.body.appendChild(dlAnchor);
+        dlAnchor.click();
+        dlAnchor.remove();
+    };
+
+    window.importData = function(e) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            try {
+                const data = JSON.parse(event.target.result);
+                if(data.language && confirm(`Import ${data.cards.length} cards into ${appState.currentLang}?`)) {
+                    // Merge categories
+                    const newCats = [...new Set([...appState.categories, ...data.categories])];
+                    appState.categories = newCats;
+                    
+                    // Merge cards
+                    appState.cards = [...data.cards, ...appState.cards];
+                    
+                    saveData();
+                    saveCats();
+                    loadLanguageData(appState.currentLang); // Refresh
+                    alert("Import successful!");
+                } else {
+                    alert("Invalid JSON format or cancelled.");
+                }
+            } catch(err) { alert("Error reading file."); }
+        };
+        reader.readAsText(e.target.files[0]);
+    };
+
+    // --- Persistence Utilities ---
+    function saveData() {
+        localStorage.setItem(`fc_data_${appState.currentLang}`, JSON.stringify(appState.cards));
+    }
+    function saveCats() {
+        localStorage.setItem(`fc_cats_${appState.currentLang}`, JSON.stringify(appState.categories));
+    }
+
+    // --- Events ---
+    $('#timeFilter, #categoryFilter').change(renderCards);
+    $('#themeToggle').click(function() {
+        const current = $('html').attr('data-bs-theme');
+        const next = current === 'light' ? 'dark' : 'light';
+        localStorage.setItem('fc_theme', next);
+        loadTheme();
+    });
+
+    // Card Flip
+    $(document).on('click', '.word-card:not(:first-child)', function(e) {
+        if (!$(e.target).closest('.action-btn').length) $(this).toggleClass('flipped');
+    });
+
+    init();
+});
+</script>
+</body>
+</html>
